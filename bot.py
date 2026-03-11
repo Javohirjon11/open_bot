@@ -11,26 +11,20 @@ from telegram.ext import (
     filters,
 )
 
-# =========================
-# CONFIG
-# =========================
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8620408910"))
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "mysecret123")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "abc123")
 
 VOTE_LINK = "https://openbudget.uz/boards/initiatives/initiative/53/a55ad836-73cb-4b9c-a7d7-88175e63fe4d"
 
 if not TOKEN:
-    raise ValueError("BOT_TOKEN topilmadi. Render Environment Variables ga BOT_TOKEN qo'shing.")
+    raise ValueError("BOT_TOKEN topilmadi")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 
-# =========================
-# APP
-# =========================
 flask_app = Flask(__name__)
 telegram_app = Application.builder().token(TOKEN).build()
 
@@ -44,9 +38,6 @@ menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# =========================
-# HANDLERS
-# =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
@@ -201,55 +192,57 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Xabar yuborildi")
 
     except Exception:
-        await update.message.reply_text(
-            "❌ Format:\n/reply USER_ID xabar"
-        )
+        await update.message.reply_text("❌ Format:\n/reply USER_ID xabar")
 
-# =========================
-# HANDLERLARNI ULASH
-# =========================
+
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("reply", reply))
 telegram_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-# =========================
-# ROUTES
-# =========================
-@flask_app.get("/")
+
+async def telegram_startup():
+    await telegram_app.initialize()
+    await telegram_app.start()
+
+
+async def telegram_set_webhook(webhook_url: str):
+    await telegram_app.bot.set_webhook(url=webhook_url)
+
+
+async def telegram_process_update(data: dict):
+    update = Update.de_json(data, telegram_app.bot)
+    await telegram_app.process_update(update)
+
+
+asyncio.run(telegram_startup())
+
+
+@flask_app.route("/", methods=["GET"])
 def home():
     return "Bot ishlayapti", 200
 
 
-@flask_app.get("/set_webhook")
-async def set_webhook():
+@flask_app.route("/set_webhook", methods=["GET"])
+def set_webhook():
     render_url = os.getenv("RENDER_EXTERNAL_URL")
-
     if not render_url:
         return "RENDER_EXTERNAL_URL topilmadi", 500
 
     webhook_url = f"{render_url}/webhook/{WEBHOOK_SECRET}"
-    await telegram_app.bot.set_webhook(url=webhook_url)
+    asyncio.run(telegram_set_webhook(webhook_url))
     return f"Webhook o'rnatildi: {webhook_url}", 200
 
 
-@flask_app.post(f"/webhook/{WEBHOOK_SECRET}")
-async def webhook():
+@flask_app.route(f"/webhook/{WEBHOOK_SECRET}", methods=["POST"])
+def webhook():
     data = request.get_json(force=True)
-    update = Update.de_json(data, telegram_app.bot)
-    await telegram_app.process_update(update)
+    asyncio.run(telegram_process_update(data))
     return "OK", 200
 
-# =========================
-# STARTUP
-# =========================
-async def startup():
-    await telegram_app.initialize()
-    await telegram_app.start()
-
-asyncio.run(startup())
 
 app = flask_app
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "10000"))
