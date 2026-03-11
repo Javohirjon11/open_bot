@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
@@ -74,7 +75,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ✅ Agar ovozingiz haqiqiy bo‘lsa pul karta hisobingizga tushadi.
 """
-
     await update.message.reply_text(text, reply_markup=menu)
 
 
@@ -83,23 +83,19 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     text = update.message.text.strip()
 
-    # OVOZ BERISH
     if text == "🗳 Ovoz berish":
         await update.message.reply_text(
             f"🗳 Quyidagi link orqali ovoz bering:\n\n{VOTE_LINK}"
         )
-
         await update.message.reply_text(
             "📱 Endi ovoz bergan telefon raqamingizni yuboring.\n\nMasalan:\n+998901234567"
         )
-
         user_data[user_id] = {
             "step": "phone",
             "photos": []
         }
         return
 
-    # SCREENSHOT
     if text == "📸 Screenshot yuborish":
         if user_id not in user_data:
             user_data[user_id] = {"photos": []}
@@ -112,7 +108,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # TELEFON RAQAM
     if user_id in user_data and user_data[user_id].get("step") == "phone":
         user_data[user_id]["phone"] = text
         user_data[user_id]["step"] = "screenshot"
@@ -122,7 +117,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # KARTA
     if user_id in user_data and user_data[user_id].get("step") == "screenshot":
         card = text.replace(" ", "")
 
@@ -134,7 +128,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         phone = user_data[user_id].get("phone", "Kiritilmagan")
 
-        # ADMIN GA TEXT YUBORISH
         admin_text = f"""
 📥 Yangi ovoz
 
@@ -153,7 +146,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-        # SCREENSHOTLARNI ADMIN GA YUBORISH
         for photo in user_data[user_id].get("photos", []):
             await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo)
 
@@ -213,6 +205,13 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Format:\n/reply USER_ID xabar"
         )
 
+# =========================
+# HANDLERLARNI ULASH
+# =========================
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(CommandHandler("reply", reply))
+telegram_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
 # =========================
 # ROUTES
@@ -241,7 +240,6 @@ async def webhook():
     await telegram_app.process_update(update)
     return "OK", 200
 
-
 # =========================
 # STARTUP
 # =========================
@@ -249,15 +247,10 @@ async def startup():
     await telegram_app.initialize()
     await telegram_app.start()
 
-
-import asyncio
 asyncio.run(startup())
 
-# Render gunicorn bilan flask_app ni ishga tushiradi
 app = flask_app
 
-
-# Local test uchun
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "10000"))
     flask_app.run(host="0.0.0.0", port=port)
