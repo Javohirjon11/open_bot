@@ -1,16 +1,36 @@
 import os
-import logging
 import asyncio
+import logging
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
 
+# =========================
+# CONFIG
+# =========================
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 8620408910
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "abc123")
 
 VOTE_LINK = "https://openbudget.uz/boards/initiatives/initiative/53/a55ad836-73cb-4b9c-a7d7-88175e63fe4d"
 
+if not TOKEN:
+    raise ValueError("BOT_TOKEN topilmadi. Render Environment Variables ga BOT_TOKEN qo'shing.")
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+
+# =========================
+# GLOBAL DATA
+# =========================
 user_data = {}
 
 menu = ReplyKeyboardMarkup(
@@ -21,15 +41,14 @@ menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
+# =========================
+# TELEGRAM APP
+# =========================
+tg_app = Application.builder().token(TOKEN).build()
 
-if not TOKEN:
-    raise ValueError("BOT_TOKEN topilmadi")
-
-# START
+# =========================
+# HANDLERS
+# =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
 
@@ -47,10 +66,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📌 Jarayon:
 
-1️⃣ 🗳 Ovoz berish tugmasini bosing  
-2️⃣ 📱 Ovoz bergan telefon raqamingizni kiriting  
-3️⃣ 📸 Screenshot yuboring  
-4️⃣ 💳 Karta raqamingizni yuboring  
+1️⃣ 🗳 Ovoz berish tugmasini bosing
+2️⃣ 📱 Ovoz bergan telefon raqamingizni kiriting
+3️⃣ 📸 Screenshot yuboring
+4️⃣ 💳 Karta raqamingizni yuboring
 
 🔎 Admin tekshiradi.
 
@@ -62,7 +81,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, reply_markup=menu)
 
 
-# TEXT HANDLER
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_id = user.id
@@ -70,7 +88,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # OVOZ BERISH
     if text == "🗳 Ovoz berish":
-
         await update.message.reply_text(
             f"🗳 Quyidagi link orqali ovoz bering:\n\n{VOTE_LINK}"
         )
@@ -83,12 +100,10 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "step": "phone",
             "photos": []
         }
-
         return
 
     # SCREENSHOT
     if text == "📸 Screenshot yuborish":
-
         await update.message.reply_text(
             "📸 Screenshot yuboring.\nTelefon raqam ko‘rinib turishi kerak."
         )
@@ -97,28 +112,23 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "step": "screenshot",
             "photos": []
         }
-
         return
 
     # TELEFON RAQAM
     if user_id in user_data and user_data[user_id]["step"] == "phone":
-
         user_data[user_id]["phone"] = text
         user_data[user_id]["step"] = "screenshot"
 
         await update.message.reply_text(
             "📸 Endi ovoz berganingizni tasdiqlovchi screenshot yuboring."
         )
-
         return
 
     # KARTA
     if user_id in user_data and user_data[user_id]["step"] == "screenshot":
-
         card = text.replace(" ", "")
 
         if len(card) != 16 or not card.isdigit():
-
             await update.message.reply_text(
                 "❌ Karta noto‘g‘ri.\n\n16 xonali karta kiriting."
             )
@@ -126,7 +136,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         phone = user_data[user_id].get("phone", "Kiritilmagan")
 
-        # ADMIN GA YUBORISH
         await context.bot.send_message(
             ADMIN_ID,
             f"""
@@ -143,7 +152,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-        # screenshotlar
         for photo in user_data[user_id]["photos"]:
             await context.bot.send_photo(ADMIN_ID, photo)
 
@@ -153,11 +161,14 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⏳ Natija 1 – 1.5 soat ichida chiqadi."
         )
 
-        user_data.pop(user_id)
+        user_data.pop(user_id, None)
         return
 
+    await update.message.reply_text(
+        "Iltimos, menyudan tugmani tanlang yoki /start bosing."
+    )
 
-# PHOTO HANDLER
+
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     photo = update.message.photo[-1].file_id
@@ -176,7 +187,6 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ADMIN JAVOB
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != ADMIN_ID:
         return
@@ -192,36 +202,39 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text("✅ Xabar yuborildi")
 
-    except:
+    except Exception:
         await update.message.reply_text(
             "❌ Format:\n/reply USER_ID xabar"
         )
 
+# =========================
+# HANDLERLAR
+# =========================
+tg_app.add_handler(CommandHandler("start", start))
+tg_app.add_handler(CommandHandler("reply", reply))
+tg_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-app = Application.builder().token(TOKEN).build()
-
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("reply", reply))
-app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-
-flask_app = Flask(__name__)
-
-
+# =========================
+# TELEGRAM INIT
+# =========================
 async def init_telegram():
-    await app.initialize()
-    await app.start()
-
+    await tg_app.initialize()
+    await tg_app.start()
 
 asyncio.run(init_telegram())
 
+# =========================
+# FLASK APP
+# =========================
+app = Flask(__name__)
 
-@flask_app.route("/", methods=["GET"])
+@app.route("/", methods=["GET"])
 def home():
     return "Bot ishlayapti", 200
 
 
-@flask_app.route("/set_webhook", methods=["GET"])
+@app.route("/set_webhook", methods=["GET"])
 def set_webhook():
     render_url = os.getenv("RENDER_EXTERNAL_URL")
 
@@ -229,21 +242,18 @@ def set_webhook():
         return "RENDER_EXTERNAL_URL topilmadi", 500
 
     webhook_url = f"{render_url}/webhook/{WEBHOOK_SECRET}"
-    asyncio.run(app.bot.set_webhook(url=webhook_url))
+    asyncio.run(tg_app.bot.set_webhook(url=webhook_url))
     return f"Webhook o'rnatildi: {webhook_url}", 200
 
 
-@flask_app.route(f"/webhook/{WEBHOOK_SECRET}", methods=["POST"])
+@app.route(f"/webhook/{WEBHOOK_SECRET}", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
-    update = Update.de_json(data, app.bot)
-    asyncio.run(app.process_update(update))
+    update = Update.de_json(data, tg_app.bot)
+    asyncio.run(tg_app.process_update(update))
     return "OK", 200
-
-
-web = flask_app
 
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "10000"))
-    flask_app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)
