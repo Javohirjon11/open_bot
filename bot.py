@@ -3,30 +3,13 @@ import logging
 import asyncio
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "8620408910"))
+ADMIN_ID = 8620408910
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "abc123")
 
 VOTE_LINK = "https://openbudget.uz/boards/initiatives/initiative/53/a55ad836-73cb-4b9c-a7d7-88175e63fe4d"
-
-if not TOKEN:
-    raise ValueError("BOT_TOKEN topilmadi")
-
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-
-flask_app = Flask(__name__)
-telegram_app = Application.builder().token(TOKEN).build()
 
 user_data = {}
 
@@ -38,8 +21,17 @@ menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+
+if not TOKEN:
+    raise ValueError("BOT_TOKEN topilmadi")
+
+# START
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
+    user = update.message.from_user
 
     text = f"""
 👋 Assalomu alaykum {user.first_name}!
@@ -55,10 +47,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📌 Jarayon:
 
-1️⃣ 🗳 Ovoz berish tugmasini bosing
-2️⃣ 📱 Ovoz bergan telefon raqamingizni kiriting
-3️⃣ 📸 Screenshot yuboring
-4️⃣ 💳 Karta raqamingizni yuboring
+1️⃣ 🗳 Ovoz berish tugmasini bosing  
+2️⃣ 📱 Ovoz bergan telefon raqamingizni kiriting  
+3️⃣ 📸 Screenshot yuboring  
+4️⃣ 💳 Karta raqamingizni yuboring  
 
 🔎 Admin tekshiradi.
 
@@ -66,52 +58,67 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ✅ Agar ovozingiz haqiqiy bo‘lsa pul karta hisobingizga tushadi.
 """
+
     await update.message.reply_text(text, reply_markup=menu)
 
 
+# TEXT HANDLER
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
+    user = update.message.from_user
     user_id = user.id
-    text = update.message.text.strip()
+    text = update.message.text
 
+    # OVOZ BERISH
     if text == "🗳 Ovoz berish":
+
         await update.message.reply_text(
             f"🗳 Quyidagi link orqali ovoz bering:\n\n{VOTE_LINK}"
         )
+
         await update.message.reply_text(
             "📱 Endi ovoz bergan telefon raqamingizni yuboring.\n\nMasalan:\n+998901234567"
         )
+
         user_data[user_id] = {
             "step": "phone",
             "photos": []
         }
+
         return
 
+    # SCREENSHOT
     if text == "📸 Screenshot yuborish":
-        if user_id not in user_data:
-            user_data[user_id] = {"photos": []}
-
-        user_data[user_id]["step"] = "screenshot"
-        user_data[user_id].setdefault("photos", [])
 
         await update.message.reply_text(
             "📸 Screenshot yuboring.\nTelefon raqam ko‘rinib turishi kerak."
         )
+
+        user_data[user_id] = {
+            "step": "screenshot",
+            "photos": []
+        }
+
         return
 
-    if user_id in user_data and user_data[user_id].get("step") == "phone":
+    # TELEFON RAQAM
+    if user_id in user_data and user_data[user_id]["step"] == "phone":
+
         user_data[user_id]["phone"] = text
         user_data[user_id]["step"] = "screenshot"
 
         await update.message.reply_text(
             "📸 Endi ovoz berganingizni tasdiqlovchi screenshot yuboring."
         )
+
         return
 
-    if user_id in user_data and user_data[user_id].get("step") == "screenshot":
+    # KARTA
+    if user_id in user_data and user_data[user_id]["step"] == "screenshot":
+
         card = text.replace(" ", "")
 
         if len(card) != 16 or not card.isdigit():
+
             await update.message.reply_text(
                 "❌ Karta noto‘g‘ri.\n\n16 xonali karta kiriting."
             )
@@ -119,7 +126,10 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         phone = user_data[user_id].get("phone", "Kiritilmagan")
 
-        admin_text = f"""
+        # ADMIN GA YUBORISH
+        await context.bot.send_message(
+            ADMIN_ID,
+            f"""
 📥 Yangi ovoz
 
 👤 Ism: {user.first_name}
@@ -129,16 +139,13 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 💳 Karta: {card}
 
 👤 [Foydalanuvchi bilan bog‘lanish](tg://user?id={user_id})
-"""
-
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=admin_text,
+""",
             parse_mode="Markdown"
         )
 
-        for photo in user_data[user_id].get("photos", []):
-            await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo)
+        # screenshotlar
+        for photo in user_data[user_id]["photos"]:
+            await context.bot.send_photo(ADMIN_ID, photo)
 
         await update.message.reply_text(
             "✅ Ma'lumotlar qabul qilindi.\n\n"
@@ -146,16 +153,13 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⏳ Natija 1 – 1.5 soat ichida chiqadi."
         )
 
-        user_data.pop(user_id, None)
+        user_data.pop(user_id)
         return
 
-    await update.message.reply_text(
-        "Iltimos, menyudan tugmani tanlang yoki /start bosing."
-    )
 
-
+# PHOTO HANDLER
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user_id = update.message.from_user.id
     photo = update.message.photo[-1].file_id
 
     if user_id not in user_data:
@@ -164,7 +168,6 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "photos": []
         }
 
-    user_data[user_id].setdefault("photos", [])
     user_data[user_id]["photos"].append(photo)
 
     await update.message.reply_text(
@@ -173,49 +176,44 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ADMIN JAVOB
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if update.message.from_user.id != ADMIN_ID:
         return
 
     try:
         user_id = int(context.args[0])
-        message = " ".join(context.args[1:]).strip()
-
-        if not message:
-            raise ValueError("Xabar bo'sh")
+        message = " ".join(context.args[1:])
 
         await context.bot.send_message(
-            chat_id=user_id,
-            text=f"📩 Admin javobi:\n\n{message}"
+            user_id,
+            f"📩 Admin javobi:\n\n{message}"
         )
 
         await update.message.reply_text("✅ Xabar yuborildi")
 
-    except Exception:
-        await update.message.reply_text("❌ Format:\n/reply USER_ID xabar")
+    except:
+        await update.message.reply_text(
+            "❌ Format:\n/reply USER_ID xabar"
+        )
 
 
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(CommandHandler("reply", reply))
-telegram_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+app = Application.builder().token(TOKEN).build()
+
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("reply", reply))
+app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+flask_app = Flask(__name__)
 
 
-async def telegram_startup():
-    await telegram_app.initialize()
-    await telegram_app.start()
+async def init_telegram():
+    await app.initialize()
+    await app.start()
 
 
-async def telegram_set_webhook(webhook_url: str):
-    await telegram_app.bot.set_webhook(url=webhook_url)
-
-
-async def telegram_process_update(data: dict):
-    update = Update.de_json(data, telegram_app.bot)
-    await telegram_app.process_update(update)
-
-
-asyncio.run(telegram_startup())
+asyncio.run(init_telegram())
 
 
 @flask_app.route("/", methods=["GET"])
@@ -226,22 +224,24 @@ def home():
 @flask_app.route("/set_webhook", methods=["GET"])
 def set_webhook():
     render_url = os.getenv("RENDER_EXTERNAL_URL")
+
     if not render_url:
         return "RENDER_EXTERNAL_URL topilmadi", 500
 
     webhook_url = f"{render_url}/webhook/{WEBHOOK_SECRET}"
-    asyncio.run(telegram_set_webhook(webhook_url))
+    asyncio.run(app.bot.set_webhook(url=webhook_url))
     return f"Webhook o'rnatildi: {webhook_url}", 200
 
 
 @flask_app.route(f"/webhook/{WEBHOOK_SECRET}", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
-    asyncio.run(telegram_process_update(data))
+    update = Update.de_json(data, app.bot)
+    asyncio.run(app.process_update(update))
     return "OK", 200
 
 
-app = flask_app
+web = flask_app
 
 
 if __name__ == "__main__":
